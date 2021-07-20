@@ -2,8 +2,9 @@
 
 #include <QStringList>
 #include <QVariant>
+#include <QModelIndex>
 
-#include <deque>
+#include <vector>
 #include <unordered_map>
 
 namespace
@@ -22,27 +23,67 @@ public:
 
 	PrivateData(TableModel* const pOwner_, const QStringList& headers_, const bool isHorizontal_)
 		: pOwner(pOwner_)
-		, headers(headers_)
 		, isHorizontal(isHorizontal_)
 	{
-		vecHshRoleHeaderValue.reserve(headers.size());
-		for (const QString& header : headers) {
-			vecHshRoleHeaderValue.emplace_back(Qt::DisplayRole, header);
+		vecHshRoleHeaderValue.reserve(headers_.size());
+		for (const QString& header : headers_) {
+			vecHshRoleHeaderValue.push_back({ { Qt::DisplayRole, header } });
 		}
 	}
 
 	TableModel* const pOwner{ nullptr };
-	QStringList headers;
 	bool isHorizontal;
-	std::deque<std::unordered_map<int, QVariant>> data; //key - role, value - element value of role
+	std::vector<std::vector<std::unordered_map<int, QVariant>>> data; //key - role, value - element value of role
 	std::vector<std::unordered_map<int, QVariant>> vecHshRoleHeaderValue; //key - role, value - header value of role
 
-	size_t getElementIndex(const size_t row, const size_t column);
+	bool verificationData() const;
+	bool isElementExist(const int row, const int column) const;
 };
 
-size_t TableModel::PrivateData::getElementIndex(const size_t row, const size_t column)
+bool TableModel::PrivateData::verificationData() const
 {
-	return row * pOwner->columnCount() + column;
+	if (vecHshRoleHeaderValue.empty()) {
+		return false;
+	}
+
+	if (data.empty()) {
+		return true;
+	}
+
+	size_t cnt{ 0 };
+	size_t size{ 0 };
+	for (const auto& row : data)
+	{
+		if (0 == cnt) {
+			size = row.size();
+		}
+		else if (size != row.size()) {
+			return false;
+		}
+		++cnt;
+	}
+
+	if (isHorizontal && (data.front().size() != vecHshRoleHeaderValue.size())) {
+		return false;
+	}
+	else if (!isHorizontal && vecHshRoleHeaderValue.size() != data.size()) {
+		return false;
+	}
+
+	return true;
+}
+
+bool TableModel::PrivateData::isElementExist(const int row, const int column) const
+{
+	if (row >= data.size()) {
+		return false;
+	}
+
+	if (column >= data.front().size()) {
+		return false;
+	}
+
+	return true;
 }
 
 TableModel::TableModel(const QStringList& columns, const bool isHorizontal, QObject* pParent)
@@ -58,14 +99,18 @@ int TableModel::columnCount(const QModelIndex& parent) const
 		return 0;
 	}
 
-	if (m_pData->isHorizontal) {
-		return m_pData->headers.size();
-	}
-
-	if (m_pData->data.empty() || m_pData->headers.empty()) {
+	if (!m_pData->verificationData()) {
 		return 0;
 	}
-	return m_pData->data.size() / m_pData->headers.size();
+
+	if (m_pData->isHorizontal) {
+		return m_pData->vecHshRoleHeaderValue.size();
+	}
+
+	if (m_pData->data.empty()) {
+		return 0;
+	}
+	return m_pData->data.front().size();
 }
 
 int	TableModel::rowCount(const QModelIndex& parent) const
@@ -74,15 +119,11 @@ int	TableModel::rowCount(const QModelIndex& parent) const
 		return 0;
 	}
 
-	if (m_pData->data.empty() || m_pData->headers.empty()) {
+	if (!m_pData->verificationData()) {
 		return 0;
 	}
 
-	if (m_pData->isHorizontal) {
-		return m_pData->data.size() / m_pData->headers.size();
-	}
-
-	return m_pData->headers.size();
+	return m_pData->data.size();
 }
 
 QVariant TableModel::data(const QModelIndex& index, int role) const
@@ -93,16 +134,22 @@ QVariant TableModel::data(const QModelIndex& index, int role) const
 		return result;
 	}
 
-	const auto row{ index.row() };
-	const auto column{ index.column() };
-	const auto elementIndex{ m_pData->getElementIndex(row, column) };
-	if (0 == elementIndex || elementIndex >= m_pData->data.size()) {
+	if (!m_pData->verificationData()) {
 		return result;
 	}
 
-	const auto& elementData{ m_pData->data[elementIndex] };
-	auto iterData{ elementData.find(role) };
-	if (elementData.cend() == iterData) {
+	if (m_pData->data.empty()) {
+		return result;
+	}
+
+	const auto row{ index.row() };
+	const auto column{ index.column() };
+	if (!m_pData->isElementExist(row, column)) {
+		return result;
+	}
+
+	auto iterData{ m_pData->data[row][column].find(role) };
+	if (m_pData->data[row][column].cend() == iterData) {
 		return result;
 	}
 	result = iterData->second;
@@ -116,7 +163,7 @@ QVariant TableModel::headerData(int section, Qt::Orientation orientation, int ro
 
 	if ( (m_pData->isHorizontal && Qt::Orientation::Horizontal == orientation) || (!m_pData->isHorizontal && Qt::Orientation::Vertical == orientation) )
 	{
-		if (section < 0 || section >= m_pData->headers.size() || section >= m_pData->vecHshRoleHeaderValue.size()) {
+		if (section < 0 || section >= m_pData->vecHshRoleHeaderValue.size()) {
 			return result;
 		}
 
@@ -131,6 +178,155 @@ QVariant TableModel::headerData(int section, Qt::Orientation orientation, int ro
 	}
 
 	return result;
+}
+
+QModelIndex	TableModel::index(int row, int column, const QModelIndex& parent) const
+{
+	if (parent.isValid()) {
+		return QModelIndex{};
+	}
+
+	return QAbstractItemModel::createIndex(row, column);
+}
+
+bool TableModel::insertColumns(int column, int count, const QModelIndex& parent)
+{
+	if (parent.isValid()) {
+		return false;
+	}
+
+	if (!m_pData->verificationData()) {
+		return false;
+	}
+
+	beginInsertColumns(parent, column, column + count - 1);
+	for (auto& row : m_pData->data){
+		row.insert(row.cbegin() + column, count, std::unordered_map<int, QVariant>{});
+	}
+	endInsertColumns();
+
+	if (!m_pData->verificationData()) {
+		return false;
+	}
+
+	return true;
+}
+
+bool TableModel::insertRows(int row, int count, const QModelIndex& parent)
+{
+	if (parent.isValid()) {
+		return false;
+	}
+
+	if (!m_pData->verificationData()) {
+		return false;
+	}
+
+	const int columns{ columnCount() };
+
+	beginInsertRows(parent, row, row + count - 1);
+	m_pData->data.insert(m_pData->data.cbegin() + row, count, std::vector<std::unordered_map<int, QVariant>>(columns));
+	endInsertRows();
+
+	if (!m_pData->verificationData()) {
+		return false;
+	}
+
+	return true;
+}
+
+bool TableModel::removeColumns(int column, int count, const QModelIndex& parent)
+{
+	if (parent.isValid()) {
+		return false;
+	}
+
+	if (!m_pData->verificationData()) {
+		return false;
+	}
+
+	beginRemoveColumns(parent, column, column + count - 1);
+	for (auto& row : m_pData->data) {
+		row.erase(row.cbegin() + column, row.cbegin() + column + count);
+	}
+	endRemoveColumns();
+
+	if (!m_pData->verificationData()) {
+		return false;
+	}
+
+	return true;
+}
+
+bool TableModel::removeRows(int row, int count, const QModelIndex& parent)
+{
+	if (parent.isValid()) {
+		return false;
+	}
+
+	if (!m_pData->verificationData()) {
+		return false;
+	}
+
+	beginRemoveRows(parent, row, row + count - 1);
+	m_pData->data.erase(m_pData->data.cbegin() + row, m_pData->data.cbegin() + row + count);
+	endRemoveRows();
+
+	if (!m_pData->verificationData()) {
+		return false;
+	}
+
+	return true;
+}
+
+bool TableModel::setData(const QModelIndex& index, const QVariant& value, int role)
+{
+	if (!index.isValid()) {
+		return false;
+	}
+
+	if (!m_pData->verificationData()) {
+		return false;
+	}
+
+	const int row{ index.row() };
+	const int column{ index.column() };
+	if (!m_pData->isElementExist(row, column)) {
+		return false;
+	}
+
+	m_pData->data[row][column][role] = value;
+
+	if (!m_pData->verificationData()) {
+		return false;
+	}
+
+	return true;
+}
+
+bool TableModel::setHeaderData(int section, Qt::Orientation orientation, const QVariant& value, int role)
+{
+	if (!m_pData->verificationData()) {
+		return false;
+	}
+
+	if ((m_pData->isHorizontal && Qt::Orientation::Horizontal == orientation) || (!m_pData->isHorizontal && Qt::Orientation::Vertical == orientation))
+	{
+		if (section < 0 || section >= m_pData->vecHshRoleHeaderValue.size()) {
+			return false;
+		}
+
+		m_pData->vecHshRoleHeaderValue[section][role] = value;
+	}
+	else {
+		return QAbstractItemModel::setHeaderData(section, orientation, value, role);
+	}
+
+	if (!m_pData->verificationData()) {
+		return false;
+	}
+
+	return true;
 }
 
 } // namespace tables_utils

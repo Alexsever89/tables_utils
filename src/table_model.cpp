@@ -200,6 +200,7 @@ bool TableModel::insertColumns(int column, int count, const QModelIndex& parent)
 	}
 
 	beginInsertColumns(parent, column, column + count - 1);
+	m_pData->vecHshRoleHeaderValue.insert(m_pData->vecHshRoleHeaderValue.cbegin() + column, count, std::unordered_map<int, QVariant>{});
 	for (auto& row : m_pData->data){
 		row.insert(row.cbegin() + column, count, std::unordered_map<int, QVariant>{});
 	}
@@ -296,6 +297,9 @@ bool TableModel::setData(const QModelIndex& index, const QVariant& value, int ro
 	}
 
 	m_pData->data[row][column][role] = value;
+	if (Qt::EditRole == role) {
+		m_pData->data[row][column][Qt::DisplayRole] = value;
+	}
 
 	if (!m_pData->verificationData()) {
 		return false;
@@ -327,6 +331,20 @@ bool TableModel::setHeaderData(int section, Qt::Orientation orientation, const Q
 	}
 
 	return true;
+}
+
+QModelIndex TableModel::parent([[maybe_unused]] const QModelIndex& index) const
+{
+	return QModelIndex{};
+}
+
+Qt::ItemFlags TableModel::flags(const QModelIndex& index) const
+{
+	if (!m_pData->verificationData() || !m_pData->isElementExist(index.row(), index.column())) {
+		return Qt::NoItemFlags;
+	}
+
+	return Qt::ItemIsSelectable | Qt::ItemIsEditable | Qt::ItemIsEnabled;
 }
 
 } // namespace tables_utils

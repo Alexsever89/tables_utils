@@ -123,6 +123,10 @@ int	TableModel::rowCount(const QModelIndex& parent) const
 		return 0;
 	}
 
+	if (!m_pData->isHorizontal) {
+		return m_pData->vecHshRoleHeaderValue.size();
+	}
+
 	return m_pData->data.size();
 }
 
@@ -200,8 +204,13 @@ bool TableModel::insertColumns(int column, int count, const QModelIndex& parent)
 	}
 
 	beginInsertColumns(parent, column, column + count - 1);
-	m_pData->vecHshRoleHeaderValue.insert(m_pData->vecHshRoleHeaderValue.cbegin() + column, count, std::unordered_map<int, QVariant>{});
-	for (auto& row : m_pData->data){
+	if (m_pData->isHorizontal) {
+		m_pData->vecHshRoleHeaderValue.insert(m_pData->vecHshRoleHeaderValue.cbegin() + column, count, std::unordered_map<int, QVariant>{});
+	}
+	else if (m_pData->data.empty()) {
+		m_pData->data.resize(m_pData->vecHshRoleHeaderValue.size());
+	}
+	for (auto& row : m_pData->data) {
 		row.insert(row.cbegin() + column, count, std::unordered_map<int, QVariant>{});
 	}
 	endInsertColumns();
@@ -226,6 +235,9 @@ bool TableModel::insertRows(int row, int count, const QModelIndex& parent)
 	const int columns{ columnCount() };
 
 	beginInsertRows(parent, row, row + count - 1);
+	if (!m_pData->isHorizontal) {
+		m_pData->vecHshRoleHeaderValue.insert(m_pData->vecHshRoleHeaderValue.cbegin() + row, count, std::unordered_map<int, QVariant>{});
+	}
 	m_pData->data.insert(m_pData->data.cbegin() + row, count, std::vector<std::unordered_map<int, QVariant>>(columns));
 	endInsertRows();
 
@@ -247,6 +259,9 @@ bool TableModel::removeColumns(int column, int count, const QModelIndex& parent)
 	}
 
 	beginRemoveColumns(parent, column, column + count - 1);
+	if (m_pData->isHorizontal) {
+		m_pData->vecHshRoleHeaderValue.erase(m_pData->vecHshRoleHeaderValue.cbegin() + column, m_pData->vecHshRoleHeaderValue.cbegin() + column + count);
+	}
 	for (auto& row : m_pData->data) {
 		row.erase(row.cbegin() + column, row.cbegin() + column + count);
 	}
@@ -270,6 +285,9 @@ bool TableModel::removeRows(int row, int count, const QModelIndex& parent)
 	}
 
 	beginRemoveRows(parent, row, row + count - 1);
+	if (!m_pData->isHorizontal) {
+		m_pData->vecHshRoleHeaderValue.erase(m_pData->vecHshRoleHeaderValue.cbegin() + row, m_pData->vecHshRoleHeaderValue.cbegin() + row + count);
+	}
 	m_pData->data.erase(m_pData->data.cbegin() + row, m_pData->data.cbegin() + row + count);
 	endRemoveRows();
 

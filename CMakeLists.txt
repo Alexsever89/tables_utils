@@ -6,14 +6,16 @@ project(${LIB_NAME})
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 
-find_package(Qt5 COMPONENTS Core REQUIRED)
+find_package(Qt5 COMPONENTS Core Widgets REQUIRED)
 
 set(HEADERS
 	./include/table_model.h
+	./include/table_controller.h
 )
 
 set(SOURCES
 	./src/table_model.cpp
+	./src/table_controller.cpp
 )
 
 add_library(${LIB_NAME} STATIC ${HEADERS} ${SOURCES})
@@ -22,6 +24,7 @@ target_include_directories(${LIB_NAME} PUBLIC ./include)
 
 target_link_libraries(${LIB_NAME} PUBLIC
 	Qt5::Core
+	Qt5::Widgets
 )
 
 target_compile_features(${LIB_NAME} PUBLIC cxx_std_17)
